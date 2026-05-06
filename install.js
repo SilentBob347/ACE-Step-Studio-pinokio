@@ -113,6 +113,45 @@ module.exports = {
       }
     },
 
+
+    // 7b. Download ffmpeg.exe for Windows so the Video Studio can render
+    //     videos. The portable run.bat installer drops ffmpeg into
+    //     <projectRoot>/ffmpeg/ — Pinokio doesn't, so users hit
+    //     "Video rendering failed" with a missing-binary error. We mirror
+    //     the portable layout (app/ffmpeg/ffmpeg.exe) so the backend's
+    //     existing findFfmpeg() resolver picks it up automatically.
+    //     Linux/macOS users typically have ffmpeg via apt/brew/homebrew —
+    //     the backend's PATH-fallback handles those, no download needed.
+    {
+      when: "{{platform === 'win32'}}",
+      method: "shell.run",
+      params: {
+        path: "app",
+        message: [
+          // Single PowerShell command: ensure ffmpeg/ dir, download release-essentials zip,
+          // expand, copy out ffmpeg.exe (and ffprobe.exe for symmetry), clean up.
+          "powershell -NoProfile -ExecutionPolicy Bypass -Command \"" +
+            "$dst = Join-Path (Get-Location) 'ffmpeg'; " +
+            "New-Item -ItemType Directory -Path $dst -Force | Out-Null; " +
+            "if (Test-Path (Join-Path $dst 'ffmpeg.exe')) { Write-Host '[ffmpeg] already present, skipping'; exit 0 }; " +
+            "$tmp = Join-Path $env:TEMP 'ace-ffmpeg'; " +
+            "New-Item -ItemType Directory -Path $tmp -Force | Out-Null; " +
+            "$zip = Join-Path $tmp 'ffmpeg.zip'; " +
+            "Write-Host '[ffmpeg] downloading release-essentials build...'; " +
+            "Invoke-WebRequest -UseBasicParsing 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip; " +
+            "Expand-Archive -Path $zip -DestinationPath $tmp -Force; " +
+            "$exe = Get-ChildItem -Path $tmp -Filter 'ffmpeg.exe' -Recurse | Select-Object -First 1; " +
+            "$probe = Get-ChildItem -Path $tmp -Filter 'ffprobe.exe' -Recurse | Select-Object -First 1; " +
+            "if (-not $exe) { throw 'ffmpeg.exe not found in archive' }; " +
+            "Copy-Item -Path $exe.FullName -Destination (Join-Path $dst 'ffmpeg.exe') -Force; " +
+            "if ($probe) { Copy-Item -Path $probe.FullName -Destination (Join-Path $dst 'ffprobe.exe') -Force }; " +
+            "Remove-Item -Path $tmp -Recurse -Force; " +
+            "Write-Host '[ffmpeg] installed to' $dst" +
+            "\""
+        ]
+      }
+    },
+
     // 7. Server: npm install
     {
       method: "shell.run",
